@@ -1,0 +1,125 @@
+#!/usr/bin/env python2
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Oct 23 12:08:35 2017
+
+@author: steffen
+"""
+import numpy as np
+import matplotlib.pyplot as plt
+from pandas import read_csv
+import math
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.layers import LSTM , Dropout
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error
+
+
+
+run=2
+np.random.seed(7)
+plt.style.use(['seaborn-darkgrid'])
+batch_size = 2
+look_back = 9
+epochs=100
+np.random.seed(7)
+
+# convert an array of values into a dataset matrix
+def create_dataset(dataset, look_back=1):
+	dataX, dataY = [], []
+	for i in range(len(dataset)-look_back-1):
+		a = dataset[i:(i+look_back), 0]
+		dataX.append(a)
+		dataY.append(dataset[i + look_back, 0])
+	return np.array(dataX), np.array(dataY)
+
+
+if run==1:
+   #TOY DATASET
+   dataset = np.cos(np.arange(1000)*(20*np.pi/1000))[:,None]
+   plt.plot(dataset)
+   #scaler = MinMaxScaler(feature_range=(0, 1))
+#   dataset = scaler.fit_transform(dataset)
+   print "Dataset", run
+elif run==2:
+   dataset = read_csv('international-airline-passengers.csv', usecols=[1], engine='python', skipfooter=3)
+   dataset = dataset.values
+   dataset = dataset.astype('float32')
+   print "Dataset", run
+   plt.plot(dataset)
+   scaler = MinMaxScaler(feature_range=(0, 1))
+   dataset = scaler.fit_transform(dataset)
+
+
+
+
+train_size = int(len(dataset) * 0.67)
+test_size = len(dataset) - train_size
+train, test = dataset[0:train_size,:], dataset[train_size:len(dataset),:]
+
+
+
+
+
+
+
+trainX, trainY = create_dataset(train, look_back)
+testX, testY = create_dataset(test, look_back)
+# reshape input to be [samples, time steps, features]
+trainY= np.reshape(trainY, (trainY.shape[0], 1))
+testY=np.reshape(testY, (testY.shape[0], 1))
+
+trainX = np.reshape(trainX, (trainX.shape[0], trainX.shape[1], 1))
+testX = np.reshape(testX, (testX.shape[0], testX.shape[1], 1))
+# create and fit the LSTM network
+
+model = Sequential()
+model.add(LSTM(32, batch_input_shape=(batch_size, look_back, 1), stateful=True, return_sequences=True))
+model.add(Dropout(0.3))
+model.add(LSTM(32, batch_input_shape=(batch_size, look_back, 1), stateful=True))
+model.add(Dropout(0.3))
+model.add(Dense(1))
+model.compile(loss='mean_squared_error', optimizer='adam')
+for i in range(epochs):
+    model.fit(trainX, trainY, epochs=1, batch_size=batch_size, verbose=0, shuffle=False)
+    model.reset_states()
+
+    print('Epoch: %s of %s' % (i+1,epochs))
+
+# make predictions
+trainPredict = model.predict(trainX, batch_size=batch_size)
+testPredict = model.predict(testX, batch_size=batch_size)
+# invert predictions
+
+if run==2:
+    trainPredict = scaler.inverse_transform(trainPredict)
+    trainY = scaler.inverse_transform(trainY)
+    testPredict = scaler.inverse_transform(testPredict)
+    testY = scaler.inverse_transform(testY)
+# calculate root mean squared error
+trainScore = math.sqrt(mean_squared_error(trainY[:,0], trainPredict[:,0]))
+print('Train Score: %.2f RMSE' % (trainScore))
+testScore = math.sqrt(mean_squared_error(testY[:,0], testPredict[:,0]))
+print('Test Score: %.2f RMSE' % (testScore))
+# shift train predictions for plotting
+
+
+
+trainPredictPlot = np.empty_like(dataset)
+trainPredictPlot[:, :] = np.nan
+trainPredictPlot[look_back:len(trainPredict)+look_back, :] = trainPredict
+
+# shift test predictions for plotting
+testPredictPlot = np.empty_like(dataset)
+testPredictPlot[:, :] = np.nan
+testPredictPlot[len(trainPredict)+(look_back*2)+1:len(dataset)-1, :] = testPredict
+# plot baseline and predictions
+plt.figure(2)
+if run==2:
+    plt.plot(scaler.inverse_transform(dataset))
+elif run==1:
+    plt.plot(dataset)
+plt.plot(trainPredictPlot)
+plt.plot(testPredictPlot)
+plt.show()
