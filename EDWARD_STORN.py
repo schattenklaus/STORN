@@ -11,7 +11,7 @@ import tensorflow as tf
 import edward as ed
 from pandas import read_csv
 from keras.models import Sequential
-from keras.layers import Dense
+from keras.layers import Dense, RepeatVector
 from keras.layers import LSTM , Dropout
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error
@@ -26,11 +26,12 @@ sess = tf.InteractiveSession()
 run=1
 np.random.seed(7)
 plt.style.use(['seaborn-darkgrid'])
-batch_size = 2
-look_back = 9
+batch_size = 4
+look_back = 9   #timesteps
+featurenumber=1 #for multivariat time series
 epochs=100
 np.random.seed(7)
-d=2  # latent dim
+d=5  # latent dim
 
 # convert an array of values into a dataset matrix
 def create_dataset(dataset, look_back=1):
@@ -69,28 +70,30 @@ testX, testY = create_dataset(test, look_back)
 trainY= np.reshape(trainY, (trainY.shape[0], 1))
 testY=np.reshape(testY, (testY.shape[0], 1))
 
-trainX = np.reshape(trainX, (trainX.shape[0], trainX.shape[1], 1))
-testX = np.reshape(testX, (testX.shape[0], testX.shape[1], 1))
+trainX = np.reshape(trainX, (trainX.shape[0], trainX.shape[1], featurenumber))
+testX = np.reshape(testX, (testX.shape[0], testX.shape[1], featurenumber))
 
 
-# MODEL
-# Define a subgraph of the full model, corresponding to a minibatch of
-# size M.
-z = Normal(loc=tf.zeros([batch_size, d,1]), scale=tf.ones([batch_size, d,1]))
-hidden = Dense(2)(z.value())
-x = LSTM(4, batch_input_shape=(batch_size, look_back, 1), stateful=True, unroll=True)(hidden)
-#x = Bernoulli(logits=Dense(look_back)(hidden1))
-
-# INFERENCE
+# INFERENCE MODEL
 # Define a subgraph of the variational model, corresponding to a
 # minibatch of size M.
-x_ph = tf.placeholder(tf.int32, [batch_size, look_back,1])
-Inference_Model = LSTM(4, batch_input_shape=(batch_size, look_back, 1), stateful=True, unroll=True)(tf.cast(x_ph, tf.float32))
-Inference_Model = Dense(2)(Inference_Model)
+x_ph = tf.placeholder(tf.int32, [batch_size, look_back, featurenumber])
 
+Inference_Model = LSTM(4, batch_input_shape=(batch_size, look_back, featurenumber), stateful=True, unroll=True)(tf.cast(x_ph, tf.float32))
 
 qz = Normal(loc=Dense(d)(Inference_Model),
-            scale=Dense(d)(Inference_Model))
+            scale=Dense(d, activation='softplus')(Inference_Model))
+
+# RECOGNITION MODEL
+# Define a subgraph of the full model, corresponding to a minibatch of
+# size M.
+z     = Normal(loc=tf.zeros([batch_size, d]), scale=tf.ones([batch_size, d]))
+z_rep = RepeatVector(look_back)(z)
+x_i   = LSTM(4, batch_input_shape=(batch_size, look_back, d), stateful=True, unroll=True)(z_rep)
+x   = Dense(1)(x_i)
+#x = Bernoulli(logits=Dense(look_back)(hidden1))
+
+
 
 # Bind p(x, z) and q(z | x) to the same TensorFlow placeholder for x.
 inference = ed.KLqp({z: qz}, data={x: x_ph})

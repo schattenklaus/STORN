@@ -14,14 +14,16 @@ from keras.layers import Dense
 from keras.layers import LSTM , Dropout
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error
-
+from edward.util import Progbar
 
 
 run=2
 np.random.seed(7)
 plt.style.use(['seaborn-darkgrid'])
-batch_size = 2
-look_back = 9
+batch_size = 2   #How many values of my data do i look on
+look_back = 9    #BPTT, how many steps I look back in time
+featurenumber=1  #If i have different features
+
 epochs=100
 np.random.seed(7)
 
@@ -75,16 +77,17 @@ testX = np.reshape(testX, (testX.shape[0], testX.shape[1], 1))
 # create and fit the LSTM network
 
 model = Sequential()
-model.add(LSTM(32, batch_input_shape=(batch_size, look_back, 1), stateful=True, return_sequences=True))
+model.add(LSTM(32, batch_input_shape=(batch_size, look_back, featurenumber), stateful=True, return_sequences=True))
 model.add(Dropout(0.3))
-model.add(LSTM(32, batch_input_shape=(batch_size, look_back, 1), stateful=True))
+model.add(LSTM(32, batch_input_shape=(batch_size, look_back, featurenumber), stateful=True))
 model.add(Dropout(0.3))
 model.add(Dense(1))
 model.compile(loss='mean_squared_error', optimizer='adam')
 for i in range(epochs):
     model.fit(trainX, trainY, epochs=1, batch_size=batch_size, verbose=0, shuffle=False)
     model.reset_states()
-
+    pbar = Progbar(epochs)
+    pbar.update(i)
     print('Epoch: %s of %s' % (i+1,epochs))
 
 # make predictions
